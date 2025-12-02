@@ -1,25 +1,48 @@
-import { createRouter, createWebHashHistory } from 'vue-router'
-import HomeView from '../views/HomeView.vue'
-
-const routes = [
-  {
-    path: '/',
-    name: 'home',
-    component: HomeView
-  },
-  {
-    path: '/about',
-    name: 'about',
-    // route level code-splitting
-    // this generates a separate chunk (about.[hash].js) for this route
-    // which is lazy-loaded when the route is visited.
-    component: () => import(/* webpackChunkName: "about" */ '../views/AboutView.vue')
-  }
-]
+import { createRouter, createWebHistory } from 'vue-router';
+import LoginView from '@/views/LoginView.vue';
+import EventsView from '@/views/EventsView.vue';
+import { auth } from '@/firebase';
 
 const router = createRouter({
-  history: createWebHashHistory(),
-  routes
-})
+  history: createWebHistory(process.env.BASE_URL),
+  routes: [
+    { path: '/', redirect: '/login' },
+    { path: '/login', name: 'Login', component: LoginView },
+    {
+      path: '/events',
+      name: 'Events',
+      component: EventsView,
+      meta: { requiresAuth: true }
+    }
+  ]
+});
 
-export default router
+let isAuthReady = false;
+let authPromise = new Promise((resolve) => {
+  const unsubscribe = auth.onAuthStateChanged(() => {
+    isAuthReady = true;
+    unsubscribe();
+    resolve();
+  });
+});
+
+// Guard robuste
+router.beforeEach(async (to, from, next) => {
+  // Attendre que Firebase ait chargé l'état utilisateur
+  if (!isAuthReady) {
+    await authPromise;
+  }
+
+  const requiresAuth = to.matched.some(record => record.meta.requiresAuth);
+  const isLoggedIn = auth.currentUser;
+
+  if (requiresAuth && !isLoggedIn) {
+    next('/login');
+  } else if (!requiresAuth && isLoggedIn && to.path === '/login') {
+    next('/events');
+  } else {
+    next();
+  }
+});
+
+export default router;
